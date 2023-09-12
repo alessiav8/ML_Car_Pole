@@ -7,28 +7,49 @@ from tensorflow.keras import layers
 # Configuration parameters for the whole setup
 seed = 42
 gamma = 0.99  # Discount factor for past rewards
-max_steps_per_episode = 10000
-env = gym.make("CartPole-v1",render_mode="human") 
+max_steps_per_episode = 100000
+env = gym.make("CartPole-v1", render_mode="human")
 
 
 gym.utils.seeding.np_random(seed)
-eps = np.finfo(np.float32).eps.item()  # Smallest number such that 1.0 + eps != 1.0num_inputs = 4
+eps = np.finfo(
+    np.float32
+).eps.item()  # Smallest number such that 1.0 + eps != 1.0num_inputs = 4
 num_actions = 2
-num_hidden = 128
-num_inputs = 4
+num_hidden = 128  # reti neurali ed è utilizzata per introdurre non linearità nei dati
+num_inputs = 4  # spazio degli stati (angolo del palo, la velocità dell'angolo, la posizione del carrello e la velocità del carrello)
 
 inputs = layers.Input(shape=(num_inputs,))
-common = layers.Dense(num_hidden, activation="relu")(inputs)
-action = layers.Dense(num_actions, activation="softmax")(common)
-critic = layers.Dense(1)(common)
+common = layers.Dense(num_hidden, activation="relu")(
+    inputs
+)  # condiviso da entrambi i rami dell'output.
+action = layers.Dense(num_actions, activation="softmax")(
+    common
+)  # il primo ramo dell'output del modello
+critic = layers.Dense(1)(
+    common
+)  # secondo ramo dell'output del modello, che rappresenta il critico
+
+# Il primo ramo produce le probabilità delle azioni.
+# Queste probabilità vengono calcolate utilizzando l'attivazione softmax,
+# che converte un vettore di valori in un vettore di probabilità, consentendo al modello di
+# selezionare un'azione tra due opzioni possibili.
+#
+# Il secondo ramo è il critico, che produce una singola stima delle ricompense future previste.
+# Questo valore aiuta a valutare quanto una data azione sia buona o cattiva in base alle previsioni delle future ricompense.
 
 model = keras.Model(inputs=inputs, outputs=[action, critic])
 
 optimizer = keras.optimizers.legacy.Adam(learning_rate=0.01)
+# L'ottimizzatore Adam è un algoritmo di ottimizzazione comunemente utilizzato in deep learning.
+# Il tasso di apprendimento (learning_rate) è impostato su 0,01, che controlla la
+# dimensione dei passi che l'ottimizzatore prende per aggiornare i pesi del modello durante l'addestramento.
 huber_loss = keras.losses.Huber()
-action_probs_history = []
-critic_value_history = []
-rewards_history = []
+action_probs_history = (
+    []
+)  # memorizza i log delle probabilità delle azioni prese durante l'addestramento.
+critic_value_history = []  # memorizza i valori previsti dal critico.
+rewards_history = []  # memorizza le ricompense ricevute durante l'addestramento.
 running_reward = 0
 episode_count = 0
 
@@ -37,7 +58,6 @@ while True:  # Run until solved
     episode_reward = 0
     with tf.GradientTape() as tape:
         for timestep in range(1, max_steps_per_episode):
-         
             state = np.array(state, dtype=np.float32)
             state = tf.convert_to_tensor(state)
             state = tf.expand_dims(state, axis=0)
@@ -48,21 +68,34 @@ while True:  # Run until solved
             critic_value_history.append(critic_value[0, 0])
 
             # Sample action from action probability distribution
+            # action prob --> Actor
             action = np.random.choice(num_actions, p=np.squeeze(action_probs))
             action_probs_history.append(tf.math.log(action_probs[0, action]))
 
             # Apply the sampled action in our environment
-            next_state, reward, done, _ , _ , = env.step(action)
+            (
+                next_state,
+                reward,
+                done,
+                _,
+                _,
+            ) = env.step(action)
             rewards_history.append(reward)
             episode_reward += reward
 
             if done:
                 break
 
-            state=next_state
+            state = next_state
 
         # Update running reward to check condition for solving
         running_reward = 0.05 * episode_reward + (1 - 0.05) * running_reward
+
+        # 0.05: Questo valore rappresenta il peso dato alla ricompensa totale dell'episodio corrente nel calcolo della media mobile
+        # (1 - 0.05): Questo valore rappresenta il peso dato alla media mobile precedente
+        # In sostanza, questa formula combina la ricompensa totale dell'episodio corrente con la media mobile delle ricompense
+        # totali degli episodi precedenti. Questo approccio permette di ottenere una
+        # stima più stabile delle prestazioni globali dell'agente e di monitorare il miglioramento nel tempo
 
         # Calculate expected value from rewards
         # - At each timestep what was the total reward received after that timestep
